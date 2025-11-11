@@ -1,0 +1,67 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    --accent: 120 100% 50%;
+    --accent-foreground: 0 0% 0%;
+    --border: 0 0% 0%;
+    --input: 0 0% 100%;
+    --ring: 120 100% 50%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+    --accent: 120 100% 50%;
+    --accent-foreground: 0 0% 0%;
+    --border: 0 0% 100%;
+    --input: 0 0% 0%;
+    --ring: 120 100% 50%;
+    --radius: 0.5rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-black;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Brutalist utility classes */
+@layer utilities {
+  .brutalist-button {
+    @apply bg-background text-foreground border-2 border-border px-8 py-4 font-bold uppercase tracking-wider transition-all duration-100 hover:bg-foreground hover:text-background;
+  }
+  
+  .brutalist-button-accent {
+    @apply bg-accent text-accent-foreground border-2 border-border px-8 py-4 font-bold uppercase tracking-wider transition-all duration-100 hover:bg-foreground hover:text-accent;
+  }
+  
+  .brutalist-panel {
+    @apply bg-background border-4 border-border p-8;
+  }
+  
+  .brutalist-panel-dark {
+    @apply bg-foreground text-background border-4 border-background p-8;
+  }
+  
+  .brutalist-heading {
+    @apply text-6xl md:text-8xl font-bold uppercase tracking-tighter leading-none;
+  }
+  
+  .brutalist-subheading {
+    @apply text-2xl md:text-4xl font-bold uppercase tracking-wide;
+  }
+
+  .theme-toggle {
+    @apply bg-background text-foreground border-2 border-border px-4 py-2 font-bold uppercase tracking-wider transition-all duration-100 hover:bg-foreground hover:text-background;
+  }
+}
