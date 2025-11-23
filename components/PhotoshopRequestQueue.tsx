@@ -304,10 +304,10 @@ export default function PhotoshopRequestQueue() {
       </div>
       <div className="flex items-center gap-4 mb-4">
         <label className="font-semibold">Model:</label>
-        <select value={provider} onChange={(e) => setProvider(e.target.value as any)} className="border p-2">
-          <option value="gemini">Gemini 2.5 Flash</option>
-          <option value="openai">OpenAI Image Edit (gpt-image-1)</option>
-        </select>
+          <select value={provider} onChange={(e) => setProvider(e.target.value as any)} className="border p-2">
+            <option value="gemini">Gemini 2.5 Flash (Local)</option>
+            <option value="qwen">Qwen Image Edit (DashScope)</option>
+          </select>
       </div>
       {posts.map((post, index) => (
         <div

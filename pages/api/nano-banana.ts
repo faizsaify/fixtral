@@ -23,13 +23,7 @@ async function downloadImageBuffer(imageUrl: string): Promise<{ buffer: Buffer; 
   return { buffer, mime };
 }
 
-// Helper to convert buffer to data URI
-function bufferToDataUri(buffer: Buffer, mime: string) {
-  const b64 = buffer.toString('base64');
-  return `data:${mime};base64,${b64}`;
-}
-
-// Helper to run Python script with Qwen model
+// Helper to run Python script with Qwen model (Legacy/Local)
 async function runQwenModelLocally(imageBuffer: Buffer, prompt: string): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const pythonScript = path.join(process.cwd(), 'script', 'qwen_edit.py');
@@ -71,15 +65,69 @@ async function runQwenModelLocally(imageBuffer: Buffer, prompt: string): Promise
   });
 }
 
+// Helper to run Qwen via Native DashScope API (Axios)
+async function runQwenViaNativeAPI(imageUrl: string, prompt: string): Promise<string> {
+  const endpoint = "https://dashscope-intl.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
+  
+  console.log('Calling Qwen Native API with model: qwen-image-edit-plus');
+  
+  const payload = {
+    model: "qwen-image-edit-plus",
+    input: {
+      messages: [
+        {
+          role: "user",
+          content: [
+            { image: imageUrl },
+            { text: prompt }
+          ]
+        }
+      ]
+    },
+    parameters: {
+      n: 1
+    }
+  };
+
+  const response = await axios.post(endpoint, payload, {
+    headers: {
+      'Authorization': `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+      'Content-Type': 'application/json'
+    }
+  });
+
+  console.log('Qwen Native API Response Status:', response.status);
+  
+  // Extract image URL from native response structure:
+  // output.choices[0].message.content[0].image
+  const choices = response.data?.output?.choices;
+  if (!choices || choices.length === 0) {
+    throw new Error('No choices in Qwen response: ' + JSON.stringify(response.data));
+  }
+  
+  const content = choices[0].message?.content;
+  if (!content || !Array.isArray(content)) {
+    throw new Error('Invalid content in Qwen response');
+  }
+  
+  const imageItem = content.find((item: any) => item.image);
+  if (imageItem && imageItem.image) {
+    return imageItem.image;
+  }
+  
+  throw new Error('No image found in Qwen response content');
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { imageUrl, prompt } = req.body;
+  const { imageUrl, prompt, provider } = req.body;
   console.log('Received request:', {
     imageUrl: imageUrl ? (imageUrl.length > 120 ? imageUrl.substring(0, 120) + '...' : imageUrl) : 'missing',
     prompt: prompt ? (prompt.length > 200 ? prompt.substring(0, 200) + '...' : prompt) : 'missing',
+    provider
   });
 
   if (!imageUrl || !prompt) {
@@ -87,28 +135,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    // Download input image
-    console.log('Downloading image...');
-    const { buffer } = await downloadImageBuffer(imageUrl);
-    
-    // Run local Qwen model
-    console.log('Processing with local Qwen Image Edit 4bit model...');
-    const outputBuffer = await runQwenModelLocally(buffer, prompt);
-    
-    // Convert to base64 data URI
-    const outputBase64 = outputBuffer.toString('base64');
-    const editedImageBase64 = `data:image/png;base64,${outputBase64}`;
-    
-    console.log('Image edit completed successfully');
-    return res.status(200).json({
-      processedImageUrl: editedImageBase64,
-      editedImage: editedImageBase64,
-      provider: 'qwen-local-4bit',
-    });
+    if (provider === 'openai' || provider === 'qwen') {
+       // Use Qwen / OpenAI compatible API
+       if (!process.env.DASHSCOPE_API_KEY) {
+         throw new Error('DASHSCOPE_API_KEY is not set');
+       }
+       
+       const result = await runQwenViaNativeAPI(imageUrl, prompt);
+       
+       // If result is a URL, we can return it directly or download and convert to base64 if needed.
+       // Frontend handles both http and data: urls.
+       return res.status(200).json({
+         processedImageUrl: result,
+         editedImage: result,
+         provider: 'qwen-api'
+       });
+       
+    } else {
+      // Default to local nano-banana
+      console.log('Downloading image...');
+      const { buffer } = await downloadImageBuffer(imageUrl);
+      
+      console.log('Processing with local Qwen Image Edit 4bit model...');
+      const outputBuffer = await runQwenModelLocally(buffer, prompt);
+      
+      const outputBase64 = outputBuffer.toString('base64');
+      const editedImageBase64 = `data:image/png;base64,${outputBase64}`;
+      
+      console.log('Image edit completed successfully');
+      return res.status(200).json({
+        processedImageUrl: editedImageBase64,
+        editedImage: editedImageBase64,
+        provider: 'qwen-local-4bit',
+      });
+    }
   } catch (err: any) {
-    console.error('Local Qwen error:', err?.message ?? err);
+    console.error('Processing error:', err?.message ?? err);
+    // Handle Axios errors specifically to show more details
+    if (axios.isAxiosError(err)) {
+       console.error('Axios error details:', err.response?.data);
+       return res.status(500).json({
+         error: 'Failed to process image (API Error)',
+         details: JSON.stringify(err.response?.data || err.message)
+       });
+    }
+    
     return res.status(500).json({
-      error: 'Failed to process image with local Qwen model',
+      error: 'Failed to process image',
       details: err?.message ?? String(err),
     });
   }
