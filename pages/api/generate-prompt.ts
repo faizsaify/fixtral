@@ -15,7 +15,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
   try {
     const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
-    const prompt = `Given the following Reddit post title for an image editing request, generate a clear, concise, and effective prompt for an AI image editing model. You may use the title and image context if available.\n\nTitle: ${title}\nImage URL: ${imageUrl}\n\nPrompt:`;
+
+    const promptInstruction = `Given the following Reddit post title for an image editing request, generate a clear, concise, and effective prompt for an AI image editing model. You may use the title and image context if available. Give only 1 prompt, concise, no extra text.`;
+
+    // Build a single prompt string including the image URL
+    const prompt = `${promptInstruction}\n\nTitle: ${title}\nImage URL: ${imageUrl}\n\nPrompt:`;
     const result = await model.generateContent(prompt);
     const response = await result.response;
     const generatedPrompt = response.text().trim();

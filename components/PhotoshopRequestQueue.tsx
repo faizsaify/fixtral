@@ -6,32 +6,25 @@ interface ImagePreviewModalProps {
   title: string;
   open: boolean;
   onClose: () => void;
-  onGeneratePrompt: () => void;
-  onEditPrompt: () => void;
+  onGeneratePrompt: () => Promise<void>;
+  onEditPrompt: () => Promise<void>;
   generatedPrompt: string;
   setGeneratedPrompt: (p: string) => void;
   loadingPrompt: boolean;
   editingPrompt: boolean;
-  onProcessImage: () => void;
+  onProcessImage: () => Promise<void>;
   processingImage: boolean;
-  processedImageUrl: string;
+  processedImageUrl: string | null;
+  progress?: number;
+  apiError?: string | null;
+  provider: 'gemini' | 'openai';
 }
 
 function ImagePreviewModal(props: ImagePreviewModalProps) {
   const {
-    url,
-    title,
-    open,
-    onClose,
-    onGeneratePrompt,
-    onEditPrompt,
-    generatedPrompt,
-    setGeneratedPrompt,
-    loadingPrompt,
-    editingPrompt,
-    onProcessImage,
-    processingImage,
-    processedImageUrl,
+    url, title, open, onClose, onGeneratePrompt, onEditPrompt, generatedPrompt,
+    setGeneratedPrompt, loadingPrompt, editingPrompt, onProcessImage,
+    processingImage, processedImageUrl, progress, apiError, provider
   } = props;
 
   return (
@@ -47,19 +40,19 @@ function ImagePreviewModal(props: ImagePreviewModalProps) {
           <div className="flex flex-col md:flex-row gap-6 items-center justify-center">
             <div className="flex-1 flex flex-col items-center">
               <div className="font-bold mb-2">Before</div>
-              <img 
-                src={url} 
-                alt="Original" 
-                className="w-full h-auto max-h-[40vh] object-contain border-2 border-gray-400" 
+              <img
+                src={url}
+                alt="Original"
+                className="w-full h-auto max-h-[40vh] object-contain border-2 border-gray-400"
               />
             </div>
             <div className="flex-1 flex flex-col items-center">
               <div className="font-bold mb-2">After</div>
               <div className="relative w-full">
-                <img 
-                  src={processedImageUrl} 
-                  alt="Edited output" 
-                  className="w-full h-auto max-h-[40vh] object-contain border-2 border-green-600" 
+                <img
+                  src={processedImageUrl}
+                  alt="Edited output"
+                  className="w-full h-auto max-h-[40vh] object-contain border-2 border-green-600"
                   onError={(e) => {
                     console.error('Error loading edited image');
                     e.currentTarget.style.display = 'none';
@@ -72,7 +65,7 @@ function ImagePreviewModal(props: ImagePreviewModalProps) {
                     }
                   }}
                 />
-                <a 
+                <a
                   href={processedImageUrl}
                   download="edited-image.png"
                   className="mt-4 inline-block px-6 py-2 bg-green-600 text-white rounded font-bold transition-colors hover:bg-black"
@@ -96,10 +89,10 @@ function ImagePreviewModal(props: ImagePreviewModalProps) {
             </div>
           </div>
         ) : (
-          <img 
-            src={url} 
-            alt={title} 
-            className="w-full h-auto max-h-[60vh] object-contain" 
+          <img
+            src={url}
+            alt={title}
+            className="w-full h-auto max-h-[60vh] object-contain"
           />
         )}
         <div className="mt-4 text-lg font-bold text-center">Original Prompt</div>
@@ -146,6 +139,12 @@ function ImagePreviewModal(props: ImagePreviewModalProps) {
             />
           </div>
         )}
+        {/* Show apiError inside modal */}
+        {apiError && (
+          <div className="mt-4 p-4 bg-red-100 text-red-700 rounded border border-red-300">
+            {apiError}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -169,6 +168,8 @@ export default function PhotoshopRequestQueue() {
   const [processedImageUrl, setProcessedImageUrl] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [errorPopup, setErrorPopup] = useState('');
+  const [provider, setProvider] = useState<'gemini' | 'openai'>('gemini');
+  const [apiError, setApiError] = useState<string | null>(null);
 
   const fetchPosts = (refresh = false) => {
     setLoading(true);
@@ -234,29 +235,35 @@ export default function PhotoshopRequestQueue() {
     setProcessingImage(true);
     setProcessedImageUrl('');
     setErrorPopup('');
+    setApiError(null);
     try {
       const res = await fetch('/api/nano-banana', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ imageUrl: preview.url, prompt: generatedPrompt, useGemini: true })
+        body: JSON.stringify({ imageUrl: preview.url, prompt: generatedPrompt, provider })
       });
       const data = await res.json();
       console.log('Received response:', {
         ok: res.ok,
         hasProcessedUrl: !!data.processedImageUrl,
         hasEditedImage: !!data.editedImage,
-        geminiTextLength: data.geminiText?.length
+        geminiTextLength: data.geminiText?.length,
+        processedLen: data.processedImageUrl ? data.processedImageUrl.length : 0,
+        processedStarts: data.processedImageUrl ? data.processedImageUrl.substring(0, 50) : null,
       });
 
       if (!res.ok) {
-        setErrorPopup(data.error || 'Failed to process image.');
-        setProcessedImageUrl('');
+        console.error('API error:', data);
+        // show specific message for rate limit
+        if (res.status === 429) setApiError('Rate limited by provider: ' + (data.details || data.error || '')); else setApiError(data.error || 'Processing failed');
       } else if (data.processedImageUrl || data.editedImage) {
         const imageData = data.processedImageUrl || data.editedImage;
         console.log('Setting processed image URL, starts with:', imageData.substring(0, 30));
-        
+
         // Ensure it's a valid data URL or web URL
-        if (imageData.startsWith('data:image/') || imageData.startsWith('http')) {
+        if (imageData && (imageData.startsWith('data:image/') || imageData.startsWith('http'))) {
+          // For very large data URIs, ensure the browser can handle it. Log the size.
+          console.log('Using processed image, length:', imageData.length);
           setProcessedImageUrl(imageData);
         } else {
           console.error('Invalid image data received');
@@ -294,6 +301,13 @@ export default function PhotoshopRequestQueue() {
         >
           {refreshing ? 'Refreshing...' : 'Refresh Feed'}
         </button>
+      </div>
+      <div className="flex items-center gap-4 mb-4">
+        <label className="font-semibold">Model:</label>
+        <select value={provider} onChange={(e) => setProvider(e.target.value as any)} className="border p-2">
+          <option value="gemini">Gemini 2.5 Flash</option>
+          <option value="openai">OpenAI Image Edit (gpt-image-1)</option>
+        </select>
       </div>
       {posts.map((post, index) => (
         <div
@@ -341,6 +355,8 @@ export default function PhotoshopRequestQueue() {
         onProcessImage={handleProcessImage}
         processingImage={processingImage}
         processedImageUrl={processedImageUrl}
+        apiError={apiError}
+        provider={provider}
       />
     </div>
   );
